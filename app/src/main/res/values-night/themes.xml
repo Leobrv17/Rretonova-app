@@ -1,7 +1,37 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+    <!-- Base application theme for dark mode. -->
     <style name="Base.Theme.Retronova" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your dark theme here. -->
-        <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
+        <!-- Couleurs primaires (mode sombre) -->
+        <item name="colorPrimary">@color/color_d</item>        <!-- Bleu clair #65CBF8 -->
+        <item name="colorPrimaryVariant">@color/color_f</item> <!-- Bleu très clair #A7EAF7 -->
+        <item name="colorOnPrimary">@color/color_e</item>      <!-- Violet foncé #350E5F -->
+
+        <!-- Couleurs secondaires (mode sombre) -->
+        <item name="colorSecondary">@color/color_a</item>      <!-- Rose #FA00B2 -->
+        <item name="colorSecondaryVariant">@color/color_b</item> <!-- Violet #AA1196 -->
+        <item name="colorOnSecondary">@color/white</item>
+
+        <!-- Background et surface -->
+        <item name="android:colorBackground">@color/color_e</item> <!-- Violet foncé #350E5F -->
+        <item name="colorSurface">@color/color_e</item>        <!-- Violet foncé #350E5F -->
+        <item name="colorAccent">@color/color_a</item>         <!-- Rose #FA00B2 -->
+
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+
+        <!-- Mode immersif -->
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+
+        <!-- Style de bouton personnalisé -->
+        <item name="materialButtonStyle">@style/RetroNovaButtonStyle.Dark</item>
+    </style>
+
+    <!-- Style de bouton avec couleurs RetroNova pour le mode sombre -->
+    <style name="RetroNovaButtonStyle.Dark" parent="Widget.MaterialComponents.Button">
+        <item name="android:textColor">@color/color_e</item>
+        <item name="backgroundTint">@color/color_a</item>
+        <item name="fontFamily">@font/ethnocentric_rg</item>
     </style>
 </resources>
