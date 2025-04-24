@@ -1,3 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Retronova</string>
+    <string name="app_name">RetroNova</string>
+    <string name="login">Connexion</string>
+    <string name="register">Inscription</string>
+    <string name="email">Email</string>
+    <string name="password">Mot de passe</string>
+    <string name="confirm_password">Confirmer le mot de passe</string>
+    <string name="forgot_password">Mot de passe oublié ?</string>
+    <string name="logout">Se déconnecter</string>
+    <string name="welcome">Bienvenue dans RetroNova!</string>
+    <string name="home">Accueil</string>
+    <string name="machines">Machine</string>
+    <string name="scores">Score</string>
+    <string name="shop">Achat</string>
+    <string name="profile">Profil</string>
 </resources>
