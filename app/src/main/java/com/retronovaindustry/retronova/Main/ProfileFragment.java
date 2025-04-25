@@ -32,11 +32,13 @@ import org.json.JSONObject;
 public class ProfileFragment extends Fragment {
 
     private static final String TAG = "ProfileFragment";
-    private TextView tvProfileName, tvProfileEmail;
+    private TextView tvProfileName, tvProfileEmail, tvPublicId, tvOfficialName;
     private Button btnEditProfile, btnLogout;
     private FirebaseAuth mAuth;
     private ApiService apiService;
     private String userId; // ID de l'utilisateur dans l'API
+    private String publicId; // ID public de l'utilisateur
+    private String firstName, lastName; // Nom et prénom officiels
 
     @Nullable
     @Override
@@ -52,6 +54,8 @@ public class ProfileFragment extends Fragment {
         // Initialiser les vues
         tvProfileName = view.findViewById(R.id.tvProfileName);
         tvProfileEmail = view.findViewById(R.id.tvProfileEmail);
+        tvPublicId = view.findViewById(R.id.tvPublicId);
+        tvOfficialName = view.findViewById(R.id.tvOfficialName);
         btnEditProfile = view.findViewById(R.id.btnEditProfile);
         btnLogout = view.findViewById(R.id.btnLogout);
 
@@ -80,7 +84,36 @@ public class ProfileFragment extends Fragment {
                 try {
                     JSONObject jsonResponse = new JSONObject(response);
                     userId = jsonResponse.getString("id");
-                    Log.d(TAG, "Utilisateur trouvé dans l'API avec ID: " + userId);
+                    publicId = jsonResponse.getString("publique_id");
+
+                    // Récupérer les informations officielles
+                    if (!jsonResponse.isNull("first_name")) {
+                        firstName = jsonResponse.getString("first_name");
+                    } else {
+                        firstName = "";
+                    }
+
+                    if (!jsonResponse.isNull("last_name")) {
+                        lastName = jsonResponse.getString("last_name");
+                    } else {
+                        lastName = "";
+                    }
+
+                    // Mettre à jour l'interface utilisateur
+                    if (getActivity() != null) {
+                        getActivity().runOnUiThread(() -> {
+                            tvPublicId.setText("ID Public: " + publicId);
+
+                            // Afficher le nom officiel complet si disponible
+                            if (!TextUtils.isEmpty(firstName) || !TextUtils.isEmpty(lastName)) {
+                                tvOfficialName.setText("Nom officiel: " + firstName + " " + lastName);
+                            } else {
+                                tvOfficialName.setText("Nom officiel: Non défini");
+                            }
+                        });
+                    }
+
+                    Log.d(TAG, "Utilisateur trouvé dans l'API avec ID: " + userId + ", Public ID: " + publicId);
                 } catch (JSONException e) {
                     Log.e(TAG, "Erreur lors du traitement de la réponse JSON", e);
                 }
@@ -99,24 +132,43 @@ public class ProfileFragment extends Fragment {
 
     private void createUserInApi(FirebaseUser user) {
         String displayName = user.getDisplayName() != null ? user.getDisplayName() : "";
-        String firstName = "";
-        String lastName = "";
+        final String userFirstName;
+        final String userLastName;
 
         if (displayName.contains(" ")) {
             String[] nameParts = displayName.split(" ", 2);
-            firstName = nameParts[0];
-            lastName = nameParts[1];
+            userFirstName = nameParts[0];
+            userLastName = nameParts[1];
         } else {
-            firstName = displayName;
+            userFirstName = displayName;
+            userLastName = "";
         }
 
-        apiService.createUserInApi(firstName, lastName, new ApiService.ApiCallback() {
+        // Ces variables finales peuvent être référencées dans le callback
+        final String finalFirstName = userFirstName;
+        final String finalLastName = userLastName;
+
+        apiService.createUserInApi(userFirstName, userLastName, new ApiService.ApiCallback() {
             @Override
             public void onSuccess(String response) {
                 try {
                     JSONObject jsonResponse = new JSONObject(response);
                     userId = jsonResponse.getString("id");
-                    Log.d(TAG, "Utilisateur créé dans l'API avec ID: " + userId);
+                    publicId = jsonResponse.getString("publique_id");
+
+                    // Mettre à jour les champs de classe directement
+                    firstName = finalFirstName;
+                    lastName = finalLastName;
+
+                    // Mettre à jour l'interface utilisateur
+                    if (getActivity() != null) {
+                        getActivity().runOnUiThread(() -> {
+                            tvPublicId.setText("ID Public: " + publicId);
+                            tvOfficialName.setText("Nom officiel: " + firstName + " " + lastName);
+                        });
+                    }
+
+                    Log.d(TAG, "Utilisateur créé dans l'API avec ID: " + userId + ", Public ID: " + publicId);
                 } catch (JSONException e) {
                     Log.e(TAG, "Erreur lors du traitement de la réponse JSON", e);
                 }
@@ -142,6 +194,10 @@ public class ProfileFragment extends Fragment {
             }
 
             tvProfileEmail.setText(email);
+
+            // L'ID public sera mis à jour par syncWithApi()
+            tvPublicId.setText("ID Public: Chargement...");
+            tvOfficialName.setText("Nom officiel: Chargement...");
         }
     }
 
@@ -158,25 +214,14 @@ public class ProfileFragment extends Fragment {
         builder.setView(viewInflated);
 
         // Récupérer les vues du layout de la boîte de dialogue
+        TextInputEditText etDisplayName = viewInflated.findViewById(R.id.etDisplayName);
         TextInputEditText etFirstName = viewInflated.findViewById(R.id.etFirstName);
         TextInputEditText etLastName = viewInflated.findViewById(R.id.etLastName);
         TextInputEditText etEmail = viewInflated.findViewById(R.id.etEmail);
         TextView tvResetPassword = viewInflated.findViewById(R.id.tvResetPassword);
 
-        // Récupérer prénom et nom du displayName actuel
-        String displayName = user.getDisplayName() != null ? user.getDisplayName() : "";
-        String firstName = "";
-        String lastName = "";
-
-        if (displayName.contains(" ")) {
-            String[] nameParts = displayName.split(" ", 2);
-            firstName = nameParts[0];
-            lastName = nameParts[1];
-        } else {
-            firstName = displayName;
-        }
-
         // Pré-remplir les champs
+        etDisplayName.setText(user.getDisplayName());
         etFirstName.setText(firstName);
         etLastName.setText(lastName);
         etEmail.setText(user.getEmail());
@@ -193,18 +238,14 @@ public class ProfileFragment extends Fragment {
 
         // Configurer les boutons de la boîte de dialogue
         builder.setPositiveButton("Enregistrer", (dialog, which) -> {
+            String newDisplayName = etDisplayName.getText().toString().trim();
             String newFirstName = etFirstName.getText().toString().trim();
             String newLastName = etLastName.getText().toString().trim();
             String newEmail = etEmail.getText().toString().trim();
-            String newDisplayName = newFirstName + " " + newLastName;
 
             // Vérifier que les champs ne sont pas vides
-            if (TextUtils.isEmpty(newFirstName)) {
-                Toast.makeText(getContext(), "Le prénom ne peut pas être vide", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (TextUtils.isEmpty(newLastName)) {
-                Toast.makeText(getContext(), "Le nom ne peut pas être vide", Toast.LENGTH_SHORT).show();
+            if (TextUtils.isEmpty(newDisplayName)) {
+                Toast.makeText(getContext(), "Le nom d'utilisateur ne peut pas être vide", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (TextUtils.isEmpty(newEmail)) {
@@ -222,14 +263,14 @@ public class ProfileFragment extends Fragment {
         builder.show();
     }
 
-    private void updateProfile(String newDisplayName, String newEmail, String firstName, String lastName) {
+    private void updateProfile(String newDisplayName, String newEmail, String newFirstName, String newLastName) {
         FirebaseUser user = mAuth.getCurrentUser();
         if (user == null) return;
 
         // Vérifier si l'email a changé
         boolean emailChanged = !user.getEmail().equals(newEmail);
 
-        // Mettre à jour le displayName dans Firebase
+        // Mettre à jour le displayName dans Firebase (nom d'utilisateur public)
         UserProfileChangeRequest profileUpdates = new UserProfileChangeRequest.Builder()
                 .setDisplayName(newDisplayName)
                 .build();
@@ -240,9 +281,11 @@ public class ProfileFragment extends Fragment {
                         // Mettre à jour l'UI avec le nouveau nom
                         tvProfileName.setText(newDisplayName);
 
-                        // Mettre à jour les informations dans l'API
+                        // Mettre à jour les informations dans l'API (informations officielles)
                         if (userId != null) {
-                            updateUserInApi(firstName, lastName);
+                            firstName = newFirstName;
+                            lastName = newLastName;
+                            updateUserInApi(newFirstName, newLastName);
                         }
 
                         // Si l'email a changé, mettre à jour l'email
@@ -257,13 +300,20 @@ public class ProfileFragment extends Fragment {
                 });
     }
 
-    private void updateUserInApi(String firstName, String lastName) {
+    private void updateUserInApi(String newFirstName, String newLastName) {
         if (userId == null) return;
 
-        apiService.updateUserInApi(userId, firstName, lastName, new ApiService.ApiCallback() {
+        apiService.updateUserInApi(userId, newFirstName, newLastName, new ApiService.ApiCallback() {
             @Override
             public void onSuccess(String response) {
                 Log.d(TAG, "Profil mis à jour dans l'API: " + response);
+
+                // Mettre à jour l'UI avec les nouveaux noms officiels
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        tvOfficialName.setText("Nom officiel: " + newFirstName + " " + newLastName);
+                    });
+                }
             }
 
             @Override

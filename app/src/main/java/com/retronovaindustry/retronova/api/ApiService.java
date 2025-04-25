@@ -143,6 +143,7 @@ public class ApiService {
 
     // Méthode pour mettre à jour un utilisateur existant
     // Dans ApiService.java, modifiez la méthode updateUserInApi pour simplifier l'appel
+    // Dans ApiService.java
     public void updateUserInApi(String userId, String firstName, String lastName, final ApiCallback callback) {
         FirebaseUser currentUser = mAuth.getCurrentUser();
         if (currentUser == null) {
@@ -156,7 +157,7 @@ public class ApiService {
                 String token = task.getResult().getToken();
 
                 try {
-                    // Créer les données à envoyer
+                    // Créer les données à envoyer (uniquement les infos officielles)
                     JSONObject jsonData = new JSONObject();
                     jsonData.put("first_name", firstName);
                     jsonData.put("last_name", lastName);
