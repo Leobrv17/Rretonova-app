@@ -1,27 +1,42 @@
 package com.retronovaindustry.retronova.Main;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.TextUtils;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
-import com.retronovaindustry.retronova.Authentication.LoginActivity;
-import com.retronovaindustry.retronova.R;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.firebase.auth.AuthCredential;
+import com.google.firebase.auth.EmailAuthProvider;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.UserProfileChangeRequest;
+import com.retronovaindustry.retronova.Authentication.LoginActivity;
+import com.retronovaindustry.retronova.R;
+import com.retronovaindustry.retronova.api.ApiService;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class ProfileFragment extends Fragment {
 
+    private static final String TAG = "ProfileFragment";
     private TextView tvProfileName, tvProfileEmail;
     private Button btnEditProfile, btnLogout;
     private FirebaseAuth mAuth;
+    private ApiService apiService;
+    private String userId; // ID de l'utilisateur dans l'API
 
     @Nullable
     @Override
@@ -31,6 +46,9 @@ public class ProfileFragment extends Fragment {
         // Initialiser Firebase Auth
         mAuth = FirebaseAuth.getInstance();
 
+        // Initialiser le service API
+        apiService = new ApiService();
+
         // Initialiser les vues
         tvProfileName = view.findViewById(R.id.tvProfileName);
         tvProfileEmail = view.findViewById(R.id.tvProfileEmail);
@@ -38,13 +56,77 @@ public class ProfileFragment extends Fragment {
         btnLogout = view.findViewById(R.id.btnLogout);
 
         // Configurer les listeners
-        btnEditProfile.setOnClickListener(v -> editProfile());
+        btnEditProfile.setOnClickListener(v -> showEditProfileDialog());
         btnLogout.setOnClickListener(v -> logout());
 
-        // Afficher les informations de l'utilisateur
+        // Charger les informations de l'utilisateur depuis Firebase
         updateProfileInfo();
 
+        // Synchroniser avec l'API
+        syncWithApi();
+
         return view;
+    }
+
+    private void syncWithApi() {
+        FirebaseUser user = mAuth.getCurrentUser();
+        if (user == null) return;
+
+        // Vérifier si l'utilisateur existe dans l'API
+        apiService.getUserByFirebaseId(user.getUid(), new ApiService.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                // L'utilisateur existe dans l'API
+                try {
+                    JSONObject jsonResponse = new JSONObject(response);
+                    userId = jsonResponse.getString("id");
+                    Log.d(TAG, "Utilisateur trouvé dans l'API avec ID: " + userId);
+                } catch (JSONException e) {
+                    Log.e(TAG, "Erreur lors du traitement de la réponse JSON", e);
+                }
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                // L'utilisateur n'existe pas dans l'API
+                Log.w(TAG, "Utilisateur non trouvé dans l'API: " + errorMessage);
+
+                // Créer l'utilisateur dans l'API si nécessaire
+                createUserInApi(user);
+            }
+        });
+    }
+
+    private void createUserInApi(FirebaseUser user) {
+        String displayName = user.getDisplayName() != null ? user.getDisplayName() : "";
+        String firstName = "";
+        String lastName = "";
+
+        if (displayName.contains(" ")) {
+            String[] nameParts = displayName.split(" ", 2);
+            firstName = nameParts[0];
+            lastName = nameParts[1];
+        } else {
+            firstName = displayName;
+        }
+
+        apiService.createUserInApi(firstName, lastName, new ApiService.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                try {
+                    JSONObject jsonResponse = new JSONObject(response);
+                    userId = jsonResponse.getString("id");
+                    Log.d(TAG, "Utilisateur créé dans l'API avec ID: " + userId);
+                } catch (JSONException e) {
+                    Log.e(TAG, "Erreur lors du traitement de la réponse JSON", e);
+                }
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                Log.e(TAG, "Échec de création dans l'API: " + errorMessage);
+            }
+        });
     }
 
     private void updateProfileInfo() {
@@ -63,9 +145,211 @@ public class ProfileFragment extends Fragment {
         }
     }
 
-    private void editProfile() {
-        // Implémentation future de la modification du profil
-        // Par exemple : ouvrir une activité d'édition de profil
+    private void showEditProfileDialog() {
+        FirebaseUser user = mAuth.getCurrentUser();
+        if (user == null) return;
+
+        // Créer la boîte de dialogue
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Modifier le profil");
+
+        // Inflater le layout custom
+        View viewInflated = LayoutInflater.from(getContext()).inflate(R.layout.dialog_edit_profile, null);
+        builder.setView(viewInflated);
+
+        // Récupérer les vues du layout de la boîte de dialogue
+        TextInputEditText etFirstName = viewInflated.findViewById(R.id.etFirstName);
+        TextInputEditText etLastName = viewInflated.findViewById(R.id.etLastName);
+        TextInputEditText etEmail = viewInflated.findViewById(R.id.etEmail);
+        TextView tvResetPassword = viewInflated.findViewById(R.id.tvResetPassword);
+
+        // Récupérer prénom et nom du displayName actuel
+        String displayName = user.getDisplayName() != null ? user.getDisplayName() : "";
+        String firstName = "";
+        String lastName = "";
+
+        if (displayName.contains(" ")) {
+            String[] nameParts = displayName.split(" ", 2);
+            firstName = nameParts[0];
+            lastName = nameParts[1];
+        } else {
+            firstName = displayName;
+        }
+
+        // Pré-remplir les champs
+        etFirstName.setText(firstName);
+        etLastName.setText(lastName);
+        etEmail.setText(user.getEmail());
+
+        // Configurer le listener pour la réinitialisation du mot de passe
+        tvResetPassword.setOnClickListener(v -> {
+            String email = etEmail.getText().toString().trim();
+            if (!TextUtils.isEmpty(email)) {
+                sendPasswordResetEmail(email);
+            } else {
+                Toast.makeText(getContext(), "Veuillez entrer votre email", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Configurer les boutons de la boîte de dialogue
+        builder.setPositiveButton("Enregistrer", (dialog, which) -> {
+            String newFirstName = etFirstName.getText().toString().trim();
+            String newLastName = etLastName.getText().toString().trim();
+            String newEmail = etEmail.getText().toString().trim();
+            String newDisplayName = newFirstName + " " + newLastName;
+
+            // Vérifier que les champs ne sont pas vides
+            if (TextUtils.isEmpty(newFirstName)) {
+                Toast.makeText(getContext(), "Le prénom ne peut pas être vide", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (TextUtils.isEmpty(newLastName)) {
+                Toast.makeText(getContext(), "Le nom ne peut pas être vide", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (TextUtils.isEmpty(newEmail)) {
+                Toast.makeText(getContext(), "L'email ne peut pas être vide", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Mettre à jour le profil
+            updateProfile(newDisplayName, newEmail, newFirstName, newLastName);
+        });
+
+        builder.setNegativeButton("Annuler", (dialog, which) -> dialog.cancel());
+
+        // Afficher la boîte de dialogue
+        builder.show();
+    }
+
+    private void updateProfile(String newDisplayName, String newEmail, String firstName, String lastName) {
+        FirebaseUser user = mAuth.getCurrentUser();
+        if (user == null) return;
+
+        // Vérifier si l'email a changé
+        boolean emailChanged = !user.getEmail().equals(newEmail);
+
+        // Mettre à jour le displayName dans Firebase
+        UserProfileChangeRequest profileUpdates = new UserProfileChangeRequest.Builder()
+                .setDisplayName(newDisplayName)
+                .build();
+
+        user.updateProfile(profileUpdates)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        // Mettre à jour l'UI avec le nouveau nom
+                        tvProfileName.setText(newDisplayName);
+
+                        // Mettre à jour les informations dans l'API
+                        if (userId != null) {
+                            updateUserInApi(firstName, lastName);
+                        }
+
+                        // Si l'email a changé, mettre à jour l'email
+                        if (emailChanged) {
+                            updateEmail(newEmail);
+                        } else {
+                            Toast.makeText(getContext(), "Profil mis à jour avec succès", Toast.LENGTH_SHORT).show();
+                        }
+                    } else {
+                        Toast.makeText(getContext(), "Erreur lors de la mise à jour du profil", Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void updateUserInApi(String firstName, String lastName) {
+        if (userId == null) return;
+
+        apiService.updateUserInApi(userId, firstName, lastName, new ApiService.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                Log.d(TAG, "Profil mis à jour dans l'API: " + response);
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                Log.e(TAG, "Erreur lors de la mise à jour du profil dans l'API: " + errorMessage);
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        Toast.makeText(getContext(), "Erreur lors de la mise à jour du profil dans l'API", Toast.LENGTH_SHORT).show();
+                    });
+                }
+            }
+        });
+    }
+
+    private void updateEmail(String newEmail) {
+        FirebaseUser user = mAuth.getCurrentUser();
+        if (user == null) return;
+
+        // Demander une reauthentification avant de changer l'email
+        showReauthDialog(user, () -> {
+            user.updateEmail(newEmail)
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful()) {
+                            tvProfileEmail.setText(newEmail);
+                            Toast.makeText(getContext(), "Email mis à jour avec succès", Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(getContext(), "Erreur lors de la mise à jour de l'email: " +
+                                            (task.getException() != null ? task.getException().getMessage() : "Erreur inconnue"),
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    });
+        });
+    }
+
+    private void sendPasswordResetEmail(String email) {
+        mAuth.sendPasswordResetEmail(email)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        Toast.makeText(getContext(), "Email de réinitialisation envoyé à " + email, Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(getContext(), "Erreur lors de l'envoi de l'email de réinitialisation: " +
+                                        (task.getException() != null ? task.getException().getMessage() : "Erreur inconnue"),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void showReauthDialog(FirebaseUser user, Runnable onSuccess) {
+        // Créer la boîte de dialogue
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Reauthentification");
+        builder.setMessage("Pour des raisons de sécurité, veuillez entrer votre mot de passe actuel");
+
+        // Inflater le layout custom pour le mot de passe
+        View viewInflated = LayoutInflater.from(getContext()).inflate(R.layout.dialog_reauth, null);
+        TextInputEditText etPassword = viewInflated.findViewById(R.id.etPassword);
+        builder.setView(viewInflated);
+
+        // Configurer les boutons
+        builder.setPositiveButton("Confirmer", null); // On le configure plus tard pour éviter la fermeture automatique
+        builder.setNegativeButton("Annuler", (dialog, which) -> dialog.cancel());
+
+        // Créer et afficher la boîte de dialogue
+        AlertDialog dialog = builder.create();
+        dialog.show();
+
+        // Remplacer le listener du bouton positif pour éviter la fermeture automatique en cas d'échec
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String password = etPassword.getText().toString().trim();
+            if (TextUtils.isEmpty(password)) {
+                etPassword.setError("Le mot de passe est requis");
+                return;
+            }
+
+            // Reauthentifier l'utilisateur
+            AuthCredential credential = EmailAuthProvider.getCredential(user.getEmail(), password);
+            user.reauthenticate(credential)
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful()) {
+                            dialog.dismiss();
+                            onSuccess.run();
+                        } else {
+                            etPassword.setError("Mot de passe incorrect");
+                        }
+                    });
+        });
     }
 
     private void logout() {
@@ -75,6 +359,8 @@ public class ProfileFragment extends Fragment {
         // Rediriger vers l'écran de connexion
         Intent intent = new Intent(getActivity(), LoginActivity.class);
         startActivity(intent);
-        getActivity().finish(); // Fermer MainActivity pour éviter le retour en arrière
+        if (getActivity() != null) {
+            getActivity().finish(); // Fermer MainActivity pour éviter le retour en arrière
+        }
     }
 }

@@ -62,7 +62,7 @@ dependencies {
 
     // Support multidex
     implementation("androidx.multidex:multidex:2.0.1")
-
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation("com.google.firebase:firebase-analytics")

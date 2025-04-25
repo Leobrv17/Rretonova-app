@@ -3,11 +3,14 @@ package com.retronovaindustry.retronova.Main;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Toast;
 
 import com.retronovaindustry.retronova.Authentication.LoginActivity;
 import com.retronovaindustry.retronova.R;
+import com.retronovaindustry.retronova.api.ApiService;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -21,10 +24,12 @@ import com.retronovaindustry.retronova.Utils.FullScreenUtils;
 
 public class MainActivity extends AppCompatActivity implements BottomNavigationView.OnNavigationItemSelectedListener {
 
+    private static final String TAG = "MainActivity";
     private Toolbar toolbar;
     private BottomNavigationView bottomNavigationView;
     private FirebaseAuth mAuth;
     private View rootView;
+    private ApiService apiService;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,6 +41,9 @@ public class MainActivity extends AppCompatActivity implements BottomNavigationV
 
         // Initialiser Firebase Auth
         mAuth = FirebaseAuth.getInstance();
+
+        // Initialiser le service API
+        apiService = new ApiService();
 
         // Initialiser les vues
         toolbar = findViewById(R.id.toolbar);
@@ -90,7 +98,55 @@ public class MainActivity extends AppCompatActivity implements BottomNavigationV
         if (currentUser == null) {
             // Rediriger vers LoginActivity si non connecté
             startLoginActivity();
+        } else {
+            // Vérifier que l'utilisateur existe dans l'API
+            checkUserInApi(currentUser);
         }
+    }
+
+    private void checkUserInApi(FirebaseUser firebaseUser) {
+        if (firebaseUser == null) return;
+
+        apiService.getUserByFirebaseId(firebaseUser.getUid(), new ApiService.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                // L'utilisateur existe dans l'API, continuer normalement
+                Log.d(TAG, "Utilisateur trouvé dans l'API: " + response);
+            }
+
+            @Override
+            public void onFailure(String errorMessage) {
+                // Si l'utilisateur n'existe pas dans l'API mais est connecté à Firebase
+                Log.w(TAG, "Utilisateur non trouvé dans l'API: " + errorMessage);
+
+                // Créer l'utilisateur dans l'API en utilisant les informations Firebase
+                String name = firebaseUser.getDisplayName() != null ? firebaseUser.getDisplayName() : "";
+                String firstName = name.contains(" ") ? name.split(" ")[0] : name;
+                String lastName = name.contains(" ") ? name.substring(name.indexOf(" ") + 1) : "";
+
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Synchronisation avec l'API...", Toast.LENGTH_SHORT).show();
+                });
+
+                apiService.createUserInApi(firstName, lastName, new ApiService.ApiCallback() {
+                    @Override
+                    public void onSuccess(String response) {
+                        Log.d(TAG, "Utilisateur créé dans l'API: " + response);
+                        runOnUiThread(() -> {
+                            Toast.makeText(MainActivity.this, "Synchronisation réussie!", Toast.LENGTH_SHORT).show();
+                        });
+                    }
+
+                    @Override
+                    public void onFailure(String secondErrorMessage) {
+                        Log.e(TAG, "Échec de création de l'utilisateur dans l'API: " + secondErrorMessage);
+                        runOnUiThread(() -> {
+                            Toast.makeText(MainActivity.this, "Échec de synchronisation", Toast.LENGTH_SHORT).show();
+                        });
+                    }
+                });
+            }
+        });
     }
 
     private void startLoginActivity() {

@@ -21,13 +21,15 @@ import com.google.firebase.auth.UserProfileChangeRequest;
 import com.retronovaindustry.retronova.Main.MainActivity;
 import com.retronovaindustry.retronova.Utils.NetworkUtils;
 import com.retronovaindustry.retronova.R;
+import com.retronovaindustry.retronova.api.ApiService;
 
 public class RegisterFragment extends Fragment {
 
-    private TextInputEditText etName, etEmail, etPassword, etConfirmPassword;
+    private TextInputEditText etFirstName, etLastName, etEmail, etPassword, etConfirmPassword;
     private Button btnRegister;
     private ProgressBar progressBar;
     private FirebaseAuth mAuth;
+    private ApiService apiService;
 
     @Nullable
     @Override
@@ -37,8 +39,12 @@ public class RegisterFragment extends Fragment {
         // Initialiser Firebase Auth
         mAuth = FirebaseAuth.getInstance();
 
+        // Initialiser le service API
+        apiService = new ApiService();
+
         // Initialiser les vues
-        etName = view.findViewById(R.id.etName);
+        etFirstName = view.findViewById(R.id.etFirstName);
+        etLastName = view.findViewById(R.id.etLastName);
         etEmail = view.findViewById(R.id.etEmail);
         etPassword = view.findViewById(R.id.etPassword);
         etConfirmPassword = view.findViewById(R.id.etConfirmPassword);
@@ -52,14 +58,20 @@ public class RegisterFragment extends Fragment {
     }
 
     private void registerUser() {
-        String name = etName.getText().toString().trim();
+        String firstName = etFirstName.getText().toString().trim();
+        String lastName = etLastName.getText().toString().trim();
         String email = etEmail.getText().toString().trim();
         String password = etPassword.getText().toString().trim();
         String confirmPassword = etConfirmPassword.getText().toString().trim();
 
         // Valider les entrées
-        if (TextUtils.isEmpty(name)) {
-            etName.setError("Le nom est requis");
+        if (TextUtils.isEmpty(firstName)) {
+            etFirstName.setError("Le prénom est requis");
+            return;
+        }
+
+        if (TextUtils.isEmpty(lastName)) {
+            etLastName.setError("Le nom est requis");
             return;
         }
 
@@ -96,19 +108,50 @@ public class RegisterFragment extends Fragment {
         mAuth.createUserWithEmailAndPassword(email, password)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        // Ajouter le nom de l'utilisateur à son profil
+                        // Ajouter le nom complet de l'utilisateur à son profil
                         FirebaseUser user = mAuth.getCurrentUser();
                         if (user != null) {
+                            // Combiner prénom et nom pour le displayName de Firebase
+                            String displayName = firstName + " " + lastName;
+
                             UserProfileChangeRequest profileUpdates = new UserProfileChangeRequest.Builder()
-                                    .setDisplayName(name)
+                                    .setDisplayName(displayName)
                                     .build();
 
                             user.updateProfile(profileUpdates)
                                     .addOnCompleteListener(profileTask -> {
-                                        progressBar.setVisibility(View.GONE);
                                         if (profileTask.isSuccessful()) {
-                                            Toast.makeText(getContext(), "Inscription réussie!", Toast.LENGTH_SHORT).show();
-                                            startMainActivity();
+                                            // Firebase profile mis à jour, maintenant créer l'utilisateur dans notre API
+                                            // Utiliser les champs séparés pour l'API
+                                            apiService.createUserInApi(firstName, lastName, new ApiService.ApiCallback() {
+                                                @Override
+                                                public void onSuccess(String response) {
+                                                    // Succès de l'API, méthode appelée sur un thread secondaire
+                                                    if (getActivity() != null) {
+                                                        getActivity().runOnUiThread(() -> {
+                                                            progressBar.setVisibility(View.GONE);
+                                                            Toast.makeText(getContext(), "Inscription réussie!", Toast.LENGTH_SHORT).show();
+                                                            startMainActivity();
+                                                        });
+                                                    }
+                                                }
+
+                                                @Override
+                                                public void onFailure(String errorMessage) {
+                                                    // Échec de l'API, méthode appelée sur un thread secondaire
+                                                    if (getActivity() != null) {
+                                                        getActivity().runOnUiThread(() -> {
+                                                            progressBar.setVisibility(View.GONE);
+                                                            Toast.makeText(getContext(), "Connexion à l'API échouée: " + errorMessage, Toast.LENGTH_LONG).show();
+                                                            // On peut continuer vers MainActivity malgré l'échec, car la connexion Firebase a réussi
+                                                            startMainActivity();
+                                                        });
+                                                    }
+                                                }
+                                            });
+                                        } else {
+                                            progressBar.setVisibility(View.GONE);
+                                            Toast.makeText(getContext(), "Erreur de mise à jour du profil", Toast.LENGTH_SHORT).show();
                                         }
                                     });
                         }
